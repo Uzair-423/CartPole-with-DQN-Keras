@@ -9,4 +9,4 @@ Dependencies:
 
 run `python cartpole.py`
 
-credit for model architecture: [mswang12/minDQN](https://github.com/mswang12/minDQN/blob/main/minDQN.py)
+credit for NN model architecture: [mswang12/minDQN](https://github.com/mswang12/minDQN/blob/main/minDQN.py)
