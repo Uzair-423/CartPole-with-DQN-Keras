@@ -8,5 +8,6 @@ Dependencies:
   - Numpy  
 
 run `python cartpole.py`
+To view a saved model in action run `testModel.py`
 
 credit for NN model architecture: [mswang12/minDQN](https://github.com/mswang12/minDQN/blob/main/minDQN.py)
