@@ -6,13 +6,14 @@ import numpy as np
 from collections import deque
 import matplotlib.pyplot as plt
 import datetime
+import random
 
 def agent(states, actions):
     model = keras.Sequential()
     model.add(keras.layers.Dense(24, input_shape=states, activation='relu'))
     model.add(keras.layers.Dense(12, activation='relu'))
     model.add(keras.layers.Dense(actions, activation='linear'))
-    model.compile(loss=tf.keras.losses.Huber(), optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), metrics=['accuracy'])
+    model.compile(loss=tf.keras.losses.Huber(), optimizer=tf.keras.optimizers.Adam(learning_rate=0.008), metrics=['accuracy'])
     return model
 
 def getQ(model,state):
@@ -21,7 +22,7 @@ def getQ(model,state):
 def train(replay_memory, model, model_target, done):
     log_dir = "./logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
-    learning_rate = 0.8
+    learning_rate = 0.9
     gamma = 0.95
 
     min_replay_size = 1000
@@ -29,7 +30,8 @@ def train(replay_memory, model, model_target, done):
         return
 
     batch_size = 128
-    batch = replay_memory[-batch_size:]
+    batch = random.sample(replay_memory, batch_size)
+    # batch = replay_memory[-batch_size:]
 
     states = np.array([transition[0] for transition in batch])
     Q_values = model.predict(states)
@@ -50,18 +52,29 @@ def train(replay_memory, model, model_target, done):
 
     model.fit(np.array(X), np.array(Y), batch_size=batch_size, verbose=2, shuffle=True)
 
+def validate(model):
+    env1 = gym.make('CartPole-v1', render_mode='human')
+    for i in range(5):
+        state = env1.reset()[0]
+        done = False
+        while not done:
+            action = np.argmax(getQ(model,state))
+            new_state, reward, done, trunc, _ = env1.step(action)
+            state = new_state
+
+    env1.close()
 
 env = gym.make('CartPole-v1')
 env.reset()
 
-n_train_episodes = 150
+n_train_episodes = 160
 n_test_episodes = 10
 
 epsilon = 1.0
 min_epsilon = 0.01
 decay = 0.01
 
-replay_memory = deque(maxlen=256)
+replay_memory = deque(maxlen=1024)
 model = agent(env.observation_space.shape, env.action_space.n)
 model_target = agent(env.observation_space.shape, env.action_space.n)
 model_target.set_weights(model.get_weights())
@@ -69,9 +82,9 @@ model_target.set_weights(model.get_weights())
 target_update_counter = 0
 model_update_counter = 0
 ep_reward_list = []
+avg_reward_list = []
 
 for episode in range(n_train_episodes):
-    print("Episode: ", episode)
     state = env.reset()[0]
     done = False
     ep_reward = 0
@@ -92,32 +105,51 @@ for episode in range(n_train_episodes):
 
         replay_memory.append([state, action, reward, new_state, done])
 
-        if model_update_counter == 4: train(replay_memory, model, model_target, done)
-        if target_update_counter == 100: model_target.set_weights(model.get_weights())
+        if model_update_counter == 4: 
+            train(replay_memory, model, model_target, done)
+            model_update_counter = 0
+        if target_update_counter == 100: 
+            model_target.set_weights(model.get_weights())
+            target_update_counter = 0
+            
 
         state = new_state
     
     print(f'Episode: {episode}, Reward: {ep_reward}, Epsilon: {epsilon}')
     ep_reward_list.append(ep_reward)
+    if episode<10:
+        avg_reward_list.append(ep_reward)
+    else:
+        avg_reward_list.append(np.mean(ep_reward_list[-10:]))
     epsilon = min_epsilon + (1 - min_epsilon) * np.exp(-decay * episode)
 
+    if episode == n_train_episodes//2 or episode == n_train_episodes//4*3:
+        validate(model)
+
 env.close()
-plt.plot(ep_reward_list)
+plt.plot(ep_reward_list, label='Episode Reward')
+plt.plot(avg_reward_list, label='Average Reward')
 plt.xlabel('Episode')
 plt.ylabel('Epsiodic Reward')
+plt.legend()
 plt.show()
 
-input('Press any key to test the model...')
+input('Press Enter to test the model...')
 
 # Test
-env = gym.make('CartPole-v1', render_mode='human')
+eval_env = gym.make('CartPole-v1', render_mode='human')
 for episode in range(n_test_episodes):
     done = False
-    state = env.reset()[0]
+    state = eval_env.reset()[0]
 
     while not done:
         action = np.argmax(getQ(model,state))
-        new_state, reward, done, trunc, _ = env.step(action)
+        new_state, reward, done, trunc, _ = eval_env.step(action)
         state = new_state
 
-env.close()
+eval_env.close()
+
+# Save the model
+prompt = input('Do you want to save the model? (y/n): ')
+if prompt == 'y':
+    model.save('cartpoleDQN.h5')
